@@ -1,0 +1,49 @@
+# Exclude specific files/folders you don't want
+.git
+calculation_metadata.json
+processed_data.xlsx
+scheil_data_classic.xlsx
+scheil_data_solute_trapping.xlsx
+tc_cache/
+
+# Standard Python excludes
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyc
+*.pyo
+*.pyd
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual environments
+venv/
+env/
+ENV/
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Jupyter Notebooks
+.ipynb_checkpoints
