@@ -1,11 +1,6 @@
-# map alloy families to databases
-# identify dependent elements
-# indentify other elements
-# Scen speed to m/s
-
 import pandas as pd
 
-def process_data(input_file='Alloy Subset Crack Data.xlsx', output_file='processed_data.xlsx'):
+def process_data(input_file=r'../Alloy Subset Crack Data.xlsx', output_file='processed_data.xlsx'):
     """
     Process alloy composition data from an Excel file.
     """
@@ -72,4 +67,4 @@ def process_data(input_file='Alloy Subset Crack Data.xlsx', output_file='process
     print("Processed data saved to 'processed_data.xlsx'")
 
 if __name__ == "__main__":
-    process_data(input_file=r"..\Alloy Master Crack Data.xlsx")
+    process_data(input_file="../Alloy Master Crack Data.xlsx")
