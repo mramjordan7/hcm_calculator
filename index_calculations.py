@@ -40,13 +40,14 @@ def calculate_indexes():
     
             df_load = pd.read_excel(file_path, sheet_name=sheet_name)
             df = df_load.copy()
+            df = df[['Fraction_Solid', 'Temperature_C','Specific_Latent_Heat_J_per_g','Specific_Heat_Capacity_J_per_gK']].dropna()
             
             fs = np.asarray(df.iloc[:, 0])
             temp = np.asarray(df.iloc[:, 1])
             latent_heat = np.asarray(df.iloc[:, 2])
             heat_capacity = np.asarray(df.iloc[:, 3])
             
-            temp_i = float(df.iloc[4, 9])
+            temp_i = float(df_load.iloc[4, 9])
             solidification_range = temp_i - temp[-1]
             
             csi = kous_model(fs, temp)

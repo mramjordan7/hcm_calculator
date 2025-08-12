@@ -26,19 +26,29 @@ def prepare_data_for_analysis():
     
     # Load alloy hcm results
     df_load_cl_hcm_results = pd.read_excel("alloy_index_results.xlsx", sheet_name='classic')
-    df_cl_hcm_results = df_load_cl_hcm_results.copy()
+    cl_hcm_results = df_load_cl_hcm_results.copy()
     df_load_st_hcm_results = pd.read_excel('alloy_index_results.xlsx', sheet_name='solute_trapping')
-    df_st_hcm_results = df_load_st_hcm_results.copy()
-    
-    index_columns = ['CSC', 'HCS', 'CSI', 'Solidification_Range']
-    cl_hcm_results = df_cl_hcm_results[index_columns]
-    st_hcm_results = df_st_hcm_results[index_columns]
+    st_hcm_results = df_load_st_hcm_results.copy()
     
     classic_data = [df_input, processed_data, cl_hcm_results]
-    solute_trap_data = [df_input, processed_data, st_hcm_results]
-    
     df_classic_combined = pd.concat(classic_data, axis=1)
-    df_solute_trap_combined = pd.concat(solute_trap_data, axis=1)
+    print("=== CREATING SOLUTE TRAPPING DATASET ===")
+    print(f"Classic combined shape: {df_classic_combined.shape}")
+    print(f"Classic columns: {list(df_classic_combined.columns)}")
+    
+    hcm_columns_to_remove = ['CSC', 'HCS', 'CSI', 'Solidification_Range']
+    df_base = df_classic_combined.drop(columns=hcm_columns_to_remove)
+    
+    st_hcm_for_merge = st_hcm_results[['Sheet_Name', 'CSC', 'HCS', 'CSI', 'Solidification_Range']].copy()
+    
+    # Merge base with solute trapping HCM results
+    df_solute_trap_combined = pd.merge(
+        df_base, 
+        st_hcm_for_merge, 
+        on='Sheet_Name', 
+        how='left',  # Keep all rows from base, fill NaN where solute data missing
+        suffixes=('', '_solute')
+    )
 
         # Export combined datasets to Excel
     output_filename = 'hcm_analysis_data.xlsx'
