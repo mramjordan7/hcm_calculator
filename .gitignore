@@ -7,6 +7,7 @@ scheil_data_solute_trapping.xlsx
 alloy_index_results.xlsx
 hcm_analysis_data.xlsx
 tc_cache/
+.spyproject/
 
 # Standard Python excludes
 __pycache__/
