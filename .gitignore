@@ -4,6 +4,8 @@ calculation_metadata.json
 processed_data.xlsx
 scheil_data_classic.xlsx
 scheil_data_solute_trapping.xlsx
+alloy_index_results.xlsx
+hcm_analysis_data.xlsx
 tc_cache/
 
 # Standard Python excludes
