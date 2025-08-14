@@ -1,14 +1,11 @@
 # Exclude specific files/folders you don't want
 .git
-calculation_metadata.json
-processed_data.xlsx
-scheil_data_classic.xlsx
-scheil_data_solute_trapping.xlsx
-alloy_index_results.xlsx
-hcm_analysis_data.xlsx
 tc_cache/
 .spyproject/
 *.pkl
+*.json
+*.xlsx
+*.csv
 
 # Standard Python excludes
 __pycache__/
