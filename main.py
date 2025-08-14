@@ -17,7 +17,7 @@ from prepare_analysis_dataset import prepare_data_for_analysis
 # Process input data
 print("\n" + "="*50)
 print("Processing input data...")
-input_file = "../Alloy Master Crack Data.xlsx"
+input_file = "../Alloy Master Crack Data.csv"
 print(f"---Using the input file: '{input_file}' ---")
 print("\n" + "="*50)
 process_data(input_file=input_file)
