@@ -8,6 +8,7 @@ alloy_index_results.xlsx
 hcm_analysis_data.xlsx
 tc_cache/
 .spyproject/
+.pkl
 
 # Standard Python excludes
 __pycache__/
