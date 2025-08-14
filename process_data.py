@@ -1,11 +1,11 @@
 import pandas as pd
 
-def process_data(input_file=r'../Alloy Subset Crack Data.xlsx', output_file='processed_data.xlsx'):
+def process_data(input_file=r'../Alloy Subset Crack Data.csv'):
     """
     Process alloy composition data from an Excel file.
     """
     # Load data file and make df copy
-    df_load = pd.read_excel(input_file)
+    df_load = pd.read_csv(input_file)
     df = df_load.copy()
 
     # Clean up copied df
@@ -63,8 +63,10 @@ def process_data(input_file=r'../Alloy Subset Crack Data.xlsx', output_file='pro
 
     # Drop element columns and 'Scanning Velo (mm/s)'
     df.drop(columns=element_columns + ['Scanning Velo (mm/s)'], inplace=True)
-    df.to_excel('processed_data.xlsx', index=False)
-    print("Processed data saved to 'processed_data.xlsx'")
+    df.to_pickle('processed_data.pkl')
+    df.to_csv('processed_data.csv')
+    print("Processed data saved to 'processed_data.pkl' and 'processed_data.csv'")
+    print("The .pkl is used to run tc_python and .csv is for visualization.")
 
 if __name__ == "__main__":
-    process_data(input_file="../Alloy Master Crack Data.xlsx")
+    process_data(input_file="../Alloy Master Crack Data.csv")
