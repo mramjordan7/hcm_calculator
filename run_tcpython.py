@@ -22,19 +22,15 @@ class SolidificationTerminationError(ValueError):
     """Raised when solidification ends before reaching fs = 0.9."""
     pass
 
-
 PROBLEM_ELEMENTS = {'H', 'B', 'N', 'O', 'P', 'S'}
 IONIC_ELEMENTS = {'O', 'P', 'S'}
 
 def run_tcpython(session, cache_dir):
     """Run ThermoCalc Python session to calculate Scheil solidification path for all alloys."""
     # Load processed data
-    df_load = pd.read_excel('processed_data.xlsx')
+    df_load = pd.read_pickle('processed_data.pkl')
     df = df_load.copy()
     
-    df['other_elements'] = df['other_elements'].apply(ast.literal_eval)
-    df['other_elements_wt_pct'] = df['other_elements_wt_pct'].apply(ast.literal_eval)
-
     # Create tc_cache directory
     cache_dir = Path('tc_cache')
     cache_dir.mkdir(exist_ok=True)
@@ -81,7 +77,8 @@ def run_tcpython(session, cache_dir):
         # Select database
         alloy_elements = [alloy_info_dict['dependent_element']] + alloy_info_dict['other_elements']
         initial_database = alloy_info_dict['initial_database']
-
+        
+        # Check if the database has all the elements for the alloy
         if initial_database in databases_and_elements:
             available_elements = databases_and_elements[initial_database]
             if set(alloy_elements).issubset(available_elements):
@@ -118,12 +115,23 @@ def run_tcpython(session, cache_dir):
                 alloy_results[alloy_key] = mode_result['data']
                 run_summary['successful_calculations'] += 1
             else:
+                print("    CALCULATION FAILED - Analyzing cause...")
+                if mode_result['errors']:
+                    error_details = mode_result['errors'][0]  # Get first error
+                    print(f"      Error Type: {error_details['error_type']}")
+                    print(f"      Error Message: {error_details['error_msg']}")
+                    print(f"      Database Used: {error_details.get('database', 'Unknown')}")
                 # Check if we should retry with filtered elements
                 contains_problem_elements = bool(set(alloy_info_dict['other_elements']) & PROBLEM_ELEMENTS)
+                problem_elements_found = set(alloy_info_dict['other_elements']) & PROBLEM_ELEMENTS
+
+                print(f"      Contains Problem Elements: {contains_problem_elements}")
+                if problem_elements_found:
+                    print(f"      Problem Elements: {problem_elements_found}")
                 
                 if contains_problem_elements:
-                    print("    Failed, retrying with filtered elements...")
-                    
+                    print("    → RETRYING with filtered elements...")
+
                     # Filter out problem elements
                     filtered_elements = []
                     filtered_wt_pcts = []
@@ -189,39 +197,68 @@ def run_tcpython(session, cache_dir):
     export_scheil_data(all_scheil_data)
     export_metadata(run_summary, all_errors)
 
-    print("" + "="*70)
-    print("\nCalculation complete.")
-    print(f"Successful: {run_summary['successful_calculations']}")
-    print(f"Failed: {run_summary['failed_calculations']}")
-    print(f"Total errors: {run_summary['total_errors']}")
-    print("" + "="*70)
+    # print("" + "="*70)
+    # print("\nCalculation complete.")
+    # print(f"Successful: {run_summary['successful_calculations']}")
+    # print(f"Failed: {run_summary['failed_calculations']}")
+    # print(f"Total errors: {run_summary['total_errors']}")
+    # print("" + "="*70)
 
 
 def attempt_calculation(session, alloy_info, database, calc_mode, mode_name, run_summary):
-    """"Attempt a single calculation."""
+    """"Attempt a single calculation."""    
+    # Debug: Print alloy information
+    print("    Alloy Info:")
+    print(f"      Index: {alloy_info['index']}")
+    print(f"      Name: {alloy_info['name']}")
+    print(f"      Database: {database}")
+    print(f"      Dependent Element: {alloy_info['dependent_element']}")
+    print(f"      Other Elements: {alloy_info['other_elements']}")
+    print(f"      Element Weights: {alloy_info['other_elements_wt_pct']}")
+    print(f"      Scan Speed: {alloy_info['scan_speed']} m/s")
+    
     try:
         alloy_elements = alloy_info['other_elements'] + [alloy_info['dependent_element']]
+        print(f"    All Elements for TC: {alloy_elements}")
 
         # Create system and scheil calculation
+        print("    → Creating ThermoCalc system...")
         system = session.select_database_and_elements(
             database, alloy_elements).get_system()
+        print("    ✓ System created successfully")
+        
+        print("    → Setting up Scheil calculation...")
         scheil_calc = (system
                         .with_scheil_calculation()
                         .set_composition_unit(CompositionUnit.MASS_PERCENT))
+        print("    ✓ Scheil calculation setup complete")
 
         # Sets inonic liquid for Ni-superalloys with O, P, S
-        if database.startswith('TCNI') and any(el in IONIC_ELEMENTS for el in alloy_elements):
+        ionic_elements_present = [el for el in alloy_elements if el in IONIC_ELEMENTS]
+        if database.startswith('TCNI') and ionic_elements_present:
             options = ScheilOptions().set_liquid_phase('IONIC_LIQ')
             scheil_calc = scheil_calc.with_options(options)
             run_summary['ionic_liq_used'] += 1
-            print(f"Row {alloy_info['index']}: Using INOIC_LIQ as liquid phase")
+            print(f"    → Using IONIC_LIQ (ionic elements found: {ionic_elements_present})")
+        else:
+            print("    → Using standard liquid phase")
 
-        for element, wt_pct in zip(
-                alloy_info['other_elements'],
-                alloy_info['other_elements_wt_pct']):
+        print("    → Setting element compositions:")
+        composition_set = {}
+        for element, wt_pct in zip(alloy_info['other_elements'], alloy_info['other_elements_wt_pct']):
             scheil_calc.set_composition(element, wt_pct)
+            composition_set[element] = wt_pct
+            print(f"      {element}: {wt_pct} wt%")
         
+        total_other = sum(alloy_info['other_elements_wt_pct'])
+        dependent_pct = 100.0 - total_other
+        composition_set[alloy_info['dependent_element']] = dependent_pct
+        print(f"      {alloy_info['dependent_element']} (balance): {dependent_pct:.3f} wt%")
+        print(f"    Total composition: {sum(composition_set.values()):.3f} wt%")
+        
+        print("    → Running ThermoCalc calculation...")
         calculation = scheil_calc.with_calculation_type(calc_mode).calculate()
+        print("    ✓ ThermoCalc calculation completed successfully")
 
         def get_curve(quantity):
             return calculation.get_values_grouped_by_stable_phases_of(
@@ -241,7 +278,6 @@ def attempt_calculation(session, alloy_info, database, calc_mode, mode_name, run
         all_steep_flags = []
         all_steepness_values = []
         steep_phases = []
-        next_phase_idx = 0
         drop_detected = False
         
         for phase_idx, phase in enumerate(temp_curve):
@@ -255,10 +291,11 @@ def attempt_calculation(session, alloy_info, database, calc_mode, mode_name, run
             
             drop_detected, phase_steepness = detect_steep_drop(phase, fs, temp_c)
             all_phase_steepness[(phase)] = phase_steepness
+            
             if drop_detected:
                 steep_phases.append((phase, phase_steepness))
-                next_phase_idx += len(fs)
-
+                print(f"    Steep phase detected: {phase}, steepness = {phase_steepness:.1f}")
+                                    
     # Clean phase curves, skip first point of each phase, and create data block
             if len(fs) > 1:
                 min_length = min(len(fs[1:]), len(temp_c[1:]),
@@ -318,16 +355,50 @@ def attempt_calculation(session, alloy_info, database, calc_mode, mode_name, run
         heat_capacity = combined_data[:, 3]
 
         # Handle steep drop correction
+        first_steep_start = None
+        first_steep_end = None
+        
+        # Create a working copy starting from index 1 (skip first datapoint)
+        working_steep_flags = final_steep_flags[1:].copy()
+        
+        # Bridge single-point normal regions (length=1 False between True values)
+        for i in range(1, len(working_steep_flags) - 1):
+            if (working_steep_flags[i-1] == True and 
+                working_steep_flags[i] == False and 
+                working_steep_flags[i+1] == True):
+                working_steep_flags[i] = True
+        
+        # Find the start of the first steep region
+        first_steep_start = None
+        first_steep_end = None
+        
+        for i, is_steep in enumerate(working_steep_flags):
+            if is_steep:
+                first_steep_start = i + 1  # Add 1 because we skipped the first datapoint
+                break
+        
+        # If we found a steep region, find where it ends
+        if first_steep_start is not None:
+            for i in range(first_steep_start - 1, len(working_steep_flags)):  # Adjust for offset
+                if not working_steep_flags[i]:  # Found first False after steep region
+                    first_steep_end = i + 1  # Add 1 because we skipped the first datapoint
+                    break
+                
+        # Handle steep drop correction
         initial_temp_original = temperature[0]
         initial_temp_corrected = temperature[0]
         correction_index = 0
         
-        if drop_detected and next_phase_idx < len(temperature):
-            initial_temp_corrected = temperature[next_phase_idx]
-            correction_index = next_phase_idx
+        if first_steep_start is not None and first_steep_end is not None:
+            initial_temp_corrected = temperature[first_steep_end]
+            correction_index = first_steep_end
             run_summary['steep_drops_detected'] += 1
             print(f"    Steepness correction: {initial_temp_original:.1f}°C → {initial_temp_corrected:.1f}°C")
+            print(f"    First steep region: indices {first_steep_start} to {first_steep_end-1}")
+            print(f"    Using temperature at index {first_steep_end}: {initial_temp_corrected:.1f}°C")
             print("" + "-"*50)
+        else:
+            print(f"    No correction applied - steep_start: {first_steep_start}, steep_end: {first_steep_end}")
         
         scheil_df = pd.DataFrame({
             'Fraction_Solid': fraction_solid,
@@ -340,7 +411,7 @@ def attempt_calculation(session, alloy_info, database, calc_mode, mode_name, run
         })
         metadata = {
             'database_used': database,
-            'steep_drop_detected': drop_detected,
+            'steep_drop_detected': len(steep_phases) > 0,
             'steep_phases': steep_phases,
             'initial_temp_original': initial_temp_original,
             'initial_temp_corrected': initial_temp_corrected,
