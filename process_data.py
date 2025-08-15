@@ -6,6 +6,7 @@ def process_data(input_file=r'../Alloy Subset Crack Data.csv'):
     """
     # Load data file and make df copy
     df_load = pd.read_csv(input_file)
+    df_load = df_load.dropna(how='all')
     df = df_load.copy()
 
     # Clean up copied df
@@ -29,7 +30,6 @@ def process_data(input_file=r'../Alloy Subset Crack Data.csv'):
             'Titanium':       'TCTI5'
         }
     df['database'] = df['Alloy Family'].map(database_map).fillna('SSOL8')
-
     # Identify element columns, convert to numeric, fill NaNs with 0
     element_columns = [
             c for c in df.columns
@@ -40,7 +40,7 @@ def process_data(input_file=r'../Alloy Subset Crack Data.csv'):
 
     # Identify dependent element
     df['dependent_element'] = df[element_columns].idxmax(axis=1)
-
+    
     # Identify other elements and the amount in wt%
     df['other_elements'] = df.apply(
         lambda row: [col for col in element_columns

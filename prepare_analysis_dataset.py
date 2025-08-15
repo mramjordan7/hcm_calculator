@@ -9,7 +9,7 @@ import pandas as pd
 
 def prepare_data_for_analysis():
     # Load and clean input file data
-    df_load_input = pd.read_excel(r"../Alloy Master Crack Data.xlsx")
+    df_load_input = pd.read_csv(r"../Alloy Master Crack Data.csv")
     df_input = df_load_input.copy()
     
     unecessary_columns = [
@@ -19,7 +19,7 @@ def prepare_data_for_analysis():
     df_input.drop(columns=unecessary_columns, inplace=True)
     
     # Load and clean processed data file
-    df_load_processed_data = pd.read_excel('processed_data.xlsx')
+    df_load_processed_data = pd.read_csv('processed_data.csv')
     df_processed_data = df_load_processed_data.copy()
     
     processed_data = df_processed_data[['database', 'scan_speed_mps']]
