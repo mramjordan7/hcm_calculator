@@ -1,12 +1,21 @@
 from pathlib import Path
 
-try:
-    from tc_python import TCPython
-except ImportError:
+import importlib.util
+
+# Check if package is installed
+if importlib.util.find_spec("tc_python") is None:
     raise ImportError(
-        "tc_python must be installed seperately via ThermoCalc license."
+        "tc_python must be installed separately via ThermoCalc license. "
         "Please contact ThermoCalc for licensing information."
     )
+# else:
+#     import sys
+#     # Temporarily import to verify availability
+#     import tc_python
+#     # Optionally run any validation code here...
+#     # Remove from memory
+#     del tc_python
+#     sys.modules.pop("tc_python", None)
 
 from process_data import process_data
 from run_tcpython import run_tcpython
@@ -26,9 +35,8 @@ process_data(input_file=input_file)
 print("\n" + "="*50)
 print("Starting ThermoCalc session...")
 print("\n" + "="*50)
-with TCPython() as session:
-    cache_dir = Path.cwd() / "tc_cache"
-    run_tcpython(session, cache_dir)
+cache_dir = Path.cwd() / "tc_cache"
+run_tcpython(cache_dir)
 
 # Calculate hot cracking indexes from each alloys Scheil curve
 print("\n" + "="*50)

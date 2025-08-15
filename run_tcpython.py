@@ -25,7 +25,7 @@ class SolidificationTerminationError(ValueError):
 PROBLEM_ELEMENTS = {'H', 'B', 'N', 'O', 'P', 'S'}
 IONIC_ELEMENTS = {'O', 'P', 'S'}
 
-def run_tcpython(session, cache_dir):
+def run_tcpython(cache_dir):
     """Run ThermoCalc Python session to calculate Scheil solidification path for all alloys."""
     # Load processed data
     df_load = pd.read_pickle('processed_data.pkl')
@@ -34,15 +34,17 @@ def run_tcpython(session, cache_dir):
     # Create tc_cache directory
     cache_dir = Path('tc_cache')
     cache_dir.mkdir(exist_ok=True)
-    session.set_cache_folder(str(cache_dir))
 
-    # Identify elements in the databases in the DataFrame
-    databases = df['database'].unique().tolist() + ['SSOL8']
-    databases_and_elements = {}
-    for db in databases:
-        builder = session.select_database_and_elements(db, ['Al'])
-        system = builder.get_system()
-        databases_and_elements[db] = set(system.get_all_elements_in_databases())
+    # Get database elements once (this can be done with a temporary session)
+    print("Loading database information...")
+    with TCPython() as temp_session:
+        temp_session.set_cache_folder(str(cache_dir))
+        databases = df['database'].unique().tolist() + ['SSOL8']
+        databases_and_elements = {}
+        for db in databases:
+            builder = temp_session.select_database_and_elements(db, ['Al'])
+            system = builder.get_system()
+            databases_and_elements[db] = set(system.get_all_elements_in_databases())
 
     all_scheil_data = {}
     all_errors = []
@@ -63,127 +65,17 @@ def run_tcpython(session, cache_dir):
         print("" + "="*70)
         print(f"\nProcessing alloy {idx + 1}/{len(df)}: {row.get('Alloy Name')}")
         # Extract alloy information
-        alloy_info_dict = {
-            'index': row.name,
-            'name': row['Alloy Name'],
-            'initial_database': row['database'],
-            'dependent_element': row['dependent_element'],
-            'other_elements': row['other_elements'],
-            'other_elements_wt_pct': row['other_elements_wt_pct'],
-            'scan_speed': row['scan_speed_mps'],
-            'alloy_family': row['Alloy Family']
-        }
-
-        # Select database
-        alloy_elements = [alloy_info_dict['dependent_element']] + alloy_info_dict['other_elements']
-        initial_database = alloy_info_dict['initial_database']
         
-        # Check if the database has all the elements for the alloy
-        if initial_database in databases_and_elements:
-            available_elements = databases_and_elements[initial_database]
-            if set(alloy_elements).issubset(available_elements):
-                database = initial_database
-            else:
-                database = 'SSOL8'
-                run_summary['database_switches'] += 1
-
-        # Set calculation modes
-        scan_speed = alloy_info_dict['scan_speed']
-        calculation_modes = {
-            'classic': ScheilCalculationType.scheil_classic(),
-            'solute_trapping': (ScheilCalculationType.scheil_solute_trapping()
-                                .set_scanning_speed(scan_speed))}
-
-        # Run Scheil calculation for both modes
-        alloy_results = {}
-        alloy_errors = []
-
-        for mode_name, calc_type in calculation_modes.items():
-            print("" + "-"*50)
-            print(f"  Running {mode_name} calculation...")
-            mode_result = attempt_calculation(
-                session=session,
-                alloy_info=alloy_info_dict,
-                database=database,
-                calc_mode=calc_type,
-                mode_name=mode_name,
+        with TCPython() as fresh_session:
+            fresh_session.set_cache_folder(str(cache_dir))
+            
+            alloy_results, alloy_errors = process_single_alloy(
+                session=fresh_session,
+                row=row,
+                databases_and_elements=databases_and_elements,
                 run_summary=run_summary
             )
-
-            if mode_result['success']:
-                alloy_key = create_alloy_key(alloy_info_dict, mode_name)
-                alloy_results[alloy_key] = mode_result['data']
-                run_summary['successful_calculations'] += 1
-            else:
-                print("    CALCULATION FAILED - Analyzing cause...")
-                if mode_result['errors']:
-                    error_details = mode_result['errors'][0]  # Get first error
-                    print(f"      Error Type: {error_details['error_type']}")
-                    print(f"      Error Message: {error_details['error_msg']}")
-                    print(f"      Database Used: {error_details.get('database', 'Unknown')}")
-                # Check if we should retry with filtered elements
-                contains_problem_elements = bool(set(alloy_info_dict['other_elements']) & PROBLEM_ELEMENTS)
-                problem_elements_found = set(alloy_info_dict['other_elements']) & PROBLEM_ELEMENTS
-
-                print(f"      Contains Problem Elements: {contains_problem_elements}")
-                if problem_elements_found:
-                    print(f"      Problem Elements: {problem_elements_found}")
-                
-                if contains_problem_elements:
-                    print("    → RETRYING with filtered elements...")
-
-                    # Filter out problem elements
-                    filtered_elements = []
-                    filtered_wt_pcts = []
-                    
-                    for element, wt_pct in zip(alloy_info_dict['other_elements'], 
-                                                alloy_info_dict['other_elements_wt_pct']):
-                        if element not in PROBLEM_ELEMENTS:
-                            filtered_elements.append(element)
-                            filtered_wt_pcts.append(wt_pct)
-                    
-                    removed_elements = set(alloy_info_dict['other_elements']) - set(filtered_elements)
-                    print(f"    Removing problem elements: {removed_elements}")
-                    
-                    # Create filtered alloy info
-                    filtered_alloy = alloy_info_dict.copy()
-                    filtered_alloy['other_elements'] = filtered_elements
-                    filtered_alloy['other_elements_wt_pct'] = filtered_wt_pcts
-                    
-                    # Retry calculation
-                    retry_result = attempt_calculation(
-                        session=session,
-                        alloy_info=filtered_alloy,
-                        database=database,
-                        calc_mode=calc_type,
-                        mode_name=mode_name,
-                        run_summary=run_summary
-                    )
-                    
-                    if retry_result['success']:
-                        alloy_key = create_alloy_key(alloy_info_dict, mode_name)
-                        retry_result['data']['metadata']['retry_attempted'] = True
-                        retry_result['data']['metadata']['retry_successful'] = True
-                        retry_result['data']['metadata']['elements_filtered'] = True
-                        alloy_results[alloy_key] = retry_result['data']
-                        run_summary['successful_calculations'] += 1
-                        run_summary['retry_successes'] += 1
-                        print(f"    Retry success: {alloy_key}")
-                    else:
-                        # Both attempts failed
-                        mode_result['errors'][0]['retry_attempted'] = True
-                        mode_result['errors'][0]['retry_successful'] = False
-                        alloy_errors.extend(mode_result['errors'])
-                        alloy_errors.extend(retry_result['errors'])
-                        run_summary['failed_calculations'] += 1
-                        print("    Retry also failed")
-                else:
-                    # No problem elements, just failed
-                    mode_result['errors'][0]['retry_attempted'] = False
-                    mode_result['errors'][0]['contains_problem_elements'] = False
-                    alloy_errors.extend(mode_result['errors'])
-                    run_summary['failed_calculations'] += 1
-                    print(f"    Failed: {mode_result['errors'][-1]['error_msg']}")
+        
 
         if alloy_results:
             all_scheil_data.update(alloy_results)
@@ -197,15 +89,144 @@ def run_tcpython(session, cache_dir):
     export_scheil_data(all_scheil_data)
     export_metadata(run_summary, all_errors)
 
-    # print("" + "="*70)
-    # print("\nCalculation complete.")
-    # print(f"Successful: {run_summary['successful_calculations']}")
-    # print(f"Failed: {run_summary['failed_calculations']}")
-    # print(f"Total errors: {run_summary['total_errors']}")
-    # print("" + "="*70)
+    print("" + "="*70)
+    print("\nCalculation complete.")
+    print(f"Successful: {run_summary['successful_calculations']}")
+    print(f"Failed: {run_summary['failed_calculations']}")
+    print(f"Total errors: {run_summary['total_errors']}")
+    print("" + "="*70)
 
 
-def attempt_calculation(session, alloy_info, database, calc_mode, mode_name, run_summary):
+def process_single_alloy(session, row, databases_and_elements, run_summary):
+    """Process a single alloy with a fresh TC session."""
+    # Extract alloy information
+    alloy_info_dict = {
+        'index': row.name,
+        'name': row['Alloy Name'],
+        'initial_database': row['database'],
+        'dependent_element': row['dependent_element'],
+        'other_elements': row['other_elements'],
+        'other_elements_wt_pct': row['other_elements_wt_pct'],
+        'scan_speed': row['scan_speed_mps'],
+        'alloy_family': row['Alloy Family']
+    }
+    # Select database
+    alloy_elements = [alloy_info_dict['dependent_element']] + alloy_info_dict['other_elements']
+    initial_database = alloy_info_dict['initial_database']
+    
+    # Check if the database has all the elements for the alloy
+    if initial_database in databases_and_elements:
+        available_elements = databases_and_elements[initial_database]
+        if set(alloy_elements).issubset(available_elements):
+            database = initial_database
+        else:
+            database = 'SSOL8'
+            run_summary['database_switches'] += 1
+    else:
+        database = 'SSOL8'
+        run_summary['database_switches'] += 1
+
+    # Set calculation modes
+    scan_speed = alloy_info_dict['scan_speed']
+    calculation_modes = {
+        'classic': ScheilCalculationType.scheil_classic(),
+        'solute_trapping': (ScheilCalculationType.scheil_solute_trapping()
+                            .set_scanning_speed(scan_speed))}
+
+    # Run Scheil calculation for both modes
+    alloy_results = {}
+    alloy_errors = []
+
+    for mode_name, calc_type in calculation_modes.items():
+        print("" + "-"*50)
+        print(f"  Running {mode_name} calculation...")
+        mode_result = attempt_calculation(
+            session=session,
+            alloy_info=alloy_info_dict,
+            database=database,
+            calc_type=calc_type,
+            mode_name=mode_name,
+            run_summary=run_summary
+        )
+
+        if mode_result['success']:
+            alloy_key = create_alloy_key(alloy_info_dict, mode_name)
+            alloy_results[alloy_key] = mode_result['data']
+            run_summary['successful_calculations'] += 1
+        else:
+            print("    CALCULATION FAILED - Analyzing cause...")
+            if mode_result['errors']:
+                error_details = mode_result['errors'][0]  # Get first error
+                print(f"      Error Type: {error_details['error_type']}")
+                print(f"      Error Message: {error_details['error_msg']}")
+                print(f"      Database Used: {error_details.get('database', 'Unknown')}")
+            
+            # Check if we should retry with filtered elements
+            contains_problem_elements = bool(set(alloy_info_dict['other_elements']) & PROBLEM_ELEMENTS)
+            problem_elements_found = set(alloy_info_dict['other_elements']) & PROBLEM_ELEMENTS
+
+            print(f"      Contains Problem Elements: {contains_problem_elements}")
+            if problem_elements_found:
+                print(f"      Problem Elements: {problem_elements_found}")
+            
+            if contains_problem_elements:
+                print("    → RETRYING with filtered elements...")
+
+                # Filter out problem elements
+                filtered_elements = []
+                filtered_wt_pcts = []
+                
+                for element, wt_pct in zip(alloy_info_dict['other_elements'], 
+                                            alloy_info_dict['other_elements_wt_pct']):
+                    if element not in PROBLEM_ELEMENTS:
+                        filtered_elements.append(element)
+                        filtered_wt_pcts.append(wt_pct)
+                
+                removed_elements = set(alloy_info_dict['other_elements']) - set(filtered_elements)
+                print(f"    Removing problem elements: {removed_elements}")
+                
+                # Create filtered alloy info
+                filtered_alloy = alloy_info_dict.copy()
+                filtered_alloy['other_elements'] = filtered_elements
+                filtered_alloy['other_elements_wt_pct'] = filtered_wt_pcts
+                
+                # Retry calculation
+                retry_result = attempt_calculation(
+                    session=session,
+                    alloy_info=filtered_alloy,
+                    database=database,
+                    calc_type=calc_type,
+                    mode_name=mode_name,
+                    run_summary=run_summary
+                )
+                
+                if retry_result['success']:
+                    alloy_key = create_alloy_key(alloy_info_dict, mode_name)
+                    retry_result['data']['metadata']['retry_attempted'] = True
+                    retry_result['data']['metadata']['retry_successful'] = True
+                    retry_result['data']['metadata']['elements_filtered'] = True
+                    alloy_results[alloy_key] = retry_result['data']
+                    run_summary['successful_calculations'] += 1
+                    run_summary['retry_successes'] += 1
+                    print(f"    Retry success: {alloy_key}")
+                else:
+                    # Both attempts failed
+                    mode_result['errors'][0]['retry_attempted'] = True
+                    mode_result['errors'][0]['retry_successful'] = False
+                    alloy_errors.extend(mode_result['errors'])
+                    alloy_errors.extend(retry_result['errors'])
+                    run_summary['failed_calculations'] += 1
+                    print("    Retry also failed")
+            else:
+                # No problem elements, just failed
+                mode_result['errors'][0]['retry_attempted'] = False
+                mode_result['errors'][0]['contains_problem_elements'] = False
+                alloy_errors.extend(mode_result['errors'])
+                run_summary['failed_calculations'] += 1
+                print(f"    Failed: {mode_result['errors'][-1]['error_msg']}")
+    return alloy_results, alloy_errors
+
+def attempt_calculation(session, alloy_info, database, calc_type, mode_name, run_summary):
     """"Attempt a single calculation."""    
     # Debug: Print alloy information
     print("    Alloy Info:")
@@ -257,7 +278,7 @@ def attempt_calculation(session, alloy_info, database, calc_mode, mode_name, run
         print(f"    Total composition: {sum(composition_set.values()):.3f} wt%")
         
         print("    → Running ThermoCalc calculation...")
-        calculation = scheil_calc.with_calculation_type(calc_mode).calculate()
+        calculation = scheil_calc.with_calculation_type(calc_type).calculate()
         print("    ✓ ThermoCalc calculation completed successfully")
 
         def get_curve(quantity):
@@ -435,7 +456,7 @@ def attempt_calculation(session, alloy_info, database, calc_mode, mode_name, run
         error_info = {
             'alloy_index': alloy_info['index'],
             'alloy_name': alloy_info['name'],
-            'calc_mode': mode_name,
+            'calc_type': mode_name,
             'database': database,
             'error_type': type(e).__name__,
             'error_msg': str(e),
