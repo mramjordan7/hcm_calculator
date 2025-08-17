@@ -69,4 +69,4 @@ def process_data(input_file=r'../Alloy Subset Crack Data.csv'):
     print("The .pkl is used to run tc_python and .csv is for visualization.")
 
 if __name__ == "__main__":
-    process_data(input_file="../Alloy Master Crack Data.csv")
+    process_data(input_file="../Alloy test.csv")

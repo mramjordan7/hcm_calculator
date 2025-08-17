@@ -8,14 +8,6 @@ if importlib.util.find_spec("tc_python") is None:
         "tc_python must be installed separately via ThermoCalc license. "
         "Please contact ThermoCalc for licensing information."
     )
-# else:
-#     import sys
-#     # Temporarily import to verify availability
-#     import tc_python
-#     # Optionally run any validation code here...
-#     # Remove from memory
-#     del tc_python
-#     sys.modules.pop("tc_python", None)
 
 from process_data import process_data
 from run_tcpython import run_tcpython
