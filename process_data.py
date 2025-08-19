@@ -1,9 +1,16 @@
+"""
+Alloy Data Processing Script for Hot Cracking Research Tool.
+
+This script processes raw alloy composition data from CSV files into a format
+suitable for ThermoCalc Scheil solidification calculations. It serves as the
+first step in the hot cracking analysis pipeline.
+"""
 import pandas as pd
+from pathlib import Path
+
 
 def process_data(input_file=r'../Alloy Subset Crack Data.csv'):
-    """
-    Process alloy composition data from an Excel file.
-    """
+    """Process alloy composition data from an Excel file."""
     # Load data file and make df copy
     df_load = pd.read_csv(input_file)
     df_load = df_load.dropna(how='all')
@@ -12,10 +19,10 @@ def process_data(input_file=r'../Alloy Subset Crack Data.csv'):
     # Clean up copied df
     unecessary_columns = [
         'Ref #', 'Source', 'Reference', 'Particle Additions',
-        'Amount (wt%)','Crack Y or N (1 or 0)',
+        'Amount (wt%)', 'Crack Y or N (1 or 0)',
         'Max Crack Length (µm)', 'Average Crack Length (µm)',
         '# of Cracks', 'Area (mm^2)', 'Crack Density (mm^-1)',
-        'Process','P (W)', 'h(µm)', 't (µm)', 'E (J/mm^3)', 'Notes'
+        'Process', 'P (W)', 'h(µm)', 't (µm)', 'E (J/mm^3)', 'Notes'
         ]
     df.drop(columns=unecessary_columns, inplace=True)
 
@@ -37,21 +44,22 @@ def process_data(input_file=r'../Alloy Subset Crack Data.csv'):
             c for c in df.columns
             if c.isalpha() and 1 <= len(c) <= 2]
     for col in element_columns:
-            df[col] = pd.to_numeric(df[col], errors='coerce')
+        df[col] = pd.to_numeric(df[col], errors='coerce')
     df[element_columns] = df[element_columns].fillna(0)
 
     # Identify dependent element
     df['dependent_element'] = df[element_columns].idxmax(axis=1)
-    
+
     # Identify other elements and the amount in wt%
     df['other_elements'] = df.apply(
         lambda row: [col for col in element_columns
-                    if col != row['dependent_element'] and row[col] > 0],
+                     if col != row['dependent_element'] and row[col] > 0],
         axis=1
     )
 
     df['other_elements_wt_pct'] = df.apply(
-        lambda row: [float(row[elem]) for elem in row['other_elements'] if elem in df.columns],
+        lambda row: [float(row[elem]) for elem in row['other_elements']
+                     if elem in df.columns],
         axis=1
     )
 
@@ -65,10 +73,15 @@ def process_data(input_file=r'../Alloy Subset Crack Data.csv'):
 
     # Drop element columns and 'Scanning Velo (mm/s)'
     df.drop(columns=element_columns + ['Scanning Velo (mm/s)'], inplace=True)
-    df.to_pickle('processed_data.pkl')
-    df.to_csv('processed_data.csv')
-    print("Processed data saved to 'processed_data.pkl' and 'processed_data.csv'")
+    working_dir = Path('working_files')
+    working_dir.mkdir(exist_ok=True)
+
+    df.to_pickle(working_dir / 'processed_data.pkl')
+    df.to_csv(working_dir / 'view_processed_data.csv')
+    print("Processed data saved to 'working_files/processed_data.pkl'"
+          "and 'working_files/processed_data.csv'")
     print("The .pkl is used to run tc_python and .csv is for visualization.")
+
 
 if __name__ == "__main__":
     process_data(input_file="../Alloy Master Crack Data.csv")

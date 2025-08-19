@@ -1,10 +1,12 @@
-# -*- coding: utf-8 -*-
 """
-Hot cracking susceptibility index calculation functions.
+Hot Cracking Susceptibility Index Mathematical Models.
 
-Contains the mathematical models for KHCS, CSC, and HCS indexes.
+Contains the core mathematical functions for calculating hot cracking
+susceptibility indexes from Scheil solidification data. Implements Kou's model
+(CSI), Clyne-Davies model (CSC), and Berglund model (HCS) along with Mode 2
+cooling time calculations. These functions are called by index_calculations.py
+to process individual alloy results.
 """
-
 from typing import Optional
 import numpy as np
 from scipy.interpolate import interp1d
@@ -176,4 +178,3 @@ def hcs_model(csc_value: float, solidification_range: float,
     hcs = csc_value * grain_size * solidification_range
 
     return float(hcs)
-
