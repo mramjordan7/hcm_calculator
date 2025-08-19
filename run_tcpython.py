@@ -1,6 +1,7 @@
 import json
-from datetime import datetime
+import pickle
 from pathlib import Path
+import sys
 import numpy as np
 import pandas as pd
 
@@ -26,54 +27,28 @@ PROBLEM_ELEMENTS = {'H', 'B', 'N', 'O', 'P', 'S'}
 # Ionic elements are those which form ionic liquid in Ni-superalloys
 IONIC_ELEMENTS = {'O', 'P', 'S'}
 
-def run_tcpython(cache_dir):
+def run_tcpython(cache_dir, input_file):
     """Run Thermo-Calc Python session to calculate Scheil solidification path."""
     # Load processed data
-    df_load = pd.read_pickle('processed_data.pkl')
+    df_load = pd.read_pickle(input_file)
     df = df_load.copy()
     
     # Create main cache directory and output folders
     main_cache_dir = Path('tc_cache')
     main_cache_dir.mkdir(exist_ok=True)
     
-    # Create output directories for CSV files
-    output_dir = Path('scheil_results')
-    output_dir.mkdir(exist_ok=True)
-    # Create the classic and solute trapping sub-directories
-    classic_dir = output_dir / 'classic'
-    solute_trapping_dir = output_dir / 'solute_trapping'
-    classic_dir.mkdir(exist_ok=True)
-    solute_trapping_dir.mkdir(exist_ok=True)
+    classic_dir = Path('scheil_results/classic')
+    solute_trapping_dir = Path('scheil_results/solute_trapping')
 
     # Get database elements once with a temporary session
     print("Loading database information...")
-    with TCPython() as temp_session:
-        temp_session.set_cache_folder(str(main_cache_dir / 'temp'))
-        # Identifies unique databases in processed data into a list
-        database_list = df['database'].unique().tolist() + ['SSOL8'] # SSOL8 is a general database
-        
-        # Storage of each database and the elements in each database
-        databases_and_elements = {}
-        # For each database in the database list, identifies the elements in each database
-        for database in database_list:
-            builder = temp_session.select_database_and_elements(database, ['Al'])
-            system = builder.get_system()
-            databases_and_elements[database] = set(system.get_all_elements_in_databases())
-
-    # Stores all error information of the code run
-    all_errors = []
-    # Stores all run information
-    run_summary = {
-        'start_time': datetime.now().isoformat(),
-        'total_alloys': len(df),
-        'successful_calculations': 0,
-        'failed_calculations': 0,
-        'databases_used': list(databases_and_elements.keys()),
-        'database_switches': 0,
-        'ionic_liq_used': 0,
-        'steep_drops_detected': 0,
-        'retry_successes': 0
-    }
+    try:
+        with open('databases_and_elements.pkl', 'rb') as f:
+            databases_and_elements = pickle.load(f)
+            print(f"Loaded database information for {len(databases_and_elements)} databases")
+    except FileNotFoundError:
+        print("Error: databases_and_elements.pkl not found. Run load_databases.py first.")
+        return
 
     # Process each alloy in processed data with individual cache isolation
     for idx, row in df.iterrows():
@@ -81,7 +56,7 @@ def run_tcpython(cache_dir):
         print(f"\nProcessing alloy {idx + 1}/{len(df)}: {row.get('Alloy Name')}")
         
         # Create individual cache directory for single alloy
-        alloy_cache_dir = main_cache_dir / f"alloy_{idx}_{clean_filename(row.get('Alloy Name', 'unknown'))}"
+        alloy_cache_dir = main_cache_dir / f"alloy_{idx}_{clean_filename(row.get('Alloy Name', 'unknown'))}_{row.get('scan_speed_mps')}mps"
         alloy_cache_dir.mkdir(exist_ok=True)
         
         # Extract alloy information into a dictionary
@@ -100,30 +75,17 @@ def run_tcpython(cache_dir):
         with TCPython() as isolated_session:
             isolated_session.set_cache_folder(str(alloy_cache_dir))
             
-            alloy_errors = process_single_alloy_isolated(
+            process_alloy(
                 session=isolated_session,
                 alloy_info=alloy_info_dict,
                 databases_and_elements=databases_and_elements,
-                run_summary=run_summary,
                 classic_dir=classic_dir,
                 solute_trapping_dir=solute_trapping_dir
             )
 
-        if alloy_errors:
-            all_errors.extend(alloy_errors)
-
-    run_summary['end_time'] = datetime.now().isoformat()
-    run_summary['total_errors'] = len(all_errors)
-
-    # Export metadata
-    export_metadata(run_summary, all_errors, output_dir)
 
     print("" + "="*70)
     print("\nCalculation complete.")
-    print(f"Successful: {run_summary['successful_calculations']}")
-    print(f"Failed: {run_summary['failed_calculations']}")
-    print(f"Total errors: {run_summary['total_errors']}")
-    print(f"Results saved in: {output_dir}")
     print("" + "="*70)
 
 
@@ -150,7 +112,7 @@ def clean_filename(filename):
     return cleaned if cleaned else "unknown"
 
 
-def process_single_alloy_isolated(session, alloy_info, databases_and_elements, run_summary, classic_dir, solute_trapping_dir):
+def process_alloy(session, alloy_info, databases_and_elements, classic_dir, solute_trapping_dir):
     """Process a single alloy with isolated cache and immediate CSV export."""
     
     # Select database
@@ -164,10 +126,11 @@ def process_single_alloy_isolated(session, alloy_info, databases_and_elements, r
             database = initial_database
         else:
             database = 'SSOL8'
-            run_summary['database_switches'] += 1
+            print(f"    Database switched to SSOL8 for {alloy_info['name']}")
+
     else:
         database = 'SSOL8'
-        run_summary['database_switches'] += 1
+        print(f"    Database switched to SSOL8 for {alloy_info['name']}")
 
     # Set calculation modes
     scan_speed = alloy_info['scan_speed']
@@ -182,9 +145,6 @@ def process_single_alloy_isolated(session, alloy_info, databases_and_elements, r
         }
     }
 
-    # Run Scheil calculation for both modes
-    alloy_errors = []
-
     for mode_name, mode_config in calculation_modes.items():
         print("" + "-"*50)
         print(f"  Running {mode_name} calculation...")
@@ -194,8 +154,7 @@ def process_single_alloy_isolated(session, alloy_info, databases_and_elements, r
             alloy_info=alloy_info,
             database=database,
             calc_type=mode_config['calc_type'],
-            mode_name=mode_name,
-            run_summary=run_summary
+            mode_name=mode_name
         )
 
         if mode_result['success']:
@@ -206,7 +165,6 @@ def process_single_alloy_isolated(session, alloy_info, databases_and_elements, r
                 mode_name=mode_name,
                 output_dir=mode_config['output_dir']
             )
-            run_summary['successful_calculations'] += 1
             print(f"    {mode_name} calculation successful and exported")
         else:
             print("    CALCULATION FAILED - Analyzing cause...")
@@ -251,8 +209,7 @@ def process_single_alloy_isolated(session, alloy_info, databases_and_elements, r
                     alloy_info=filtered_alloy,
                     database=database,
                     calc_type=mode_config['calc_type'],
-                    mode_name=mode_name,
-                    run_summary=run_summary
+                    mode_name=mode_name
                 )
                 
                 if retry_result['success']:
@@ -268,26 +225,18 @@ def process_single_alloy_isolated(session, alloy_info, databases_and_elements, r
                         output_dir=mode_config['output_dir']
                     )
                     
-                    run_summary['successful_calculations'] += 1
-                    run_summary['retry_successes'] += 1
                     print(f"    Retry success: {mode_name} calculation and exported")
                 else:
                     # Both attempts failed
                     mode_result['errors'][0]['retry_attempted'] = True
                     mode_result['errors'][0]['retry_successful'] = False
-                    alloy_errors.extend(mode_result['errors'])
-                    alloy_errors.extend(retry_result['errors'])
-                    run_summary['failed_calculations'] += 1
+
                     print("    Retry also failed")
             else:
                 # No problem elements, just failed
                 mode_result['errors'][0]['retry_attempted'] = False
                 mode_result['errors'][0]['contains_problem_elements'] = False
-                alloy_errors.extend(mode_result['errors'])
-                run_summary['failed_calculations'] += 1
                 print(f"    Failed: {mode_result['errors'][-1]['error_msg']}")
-    
-    return alloy_errors
 
 
 def export_single_calculation_csv(alloy_info, calculation_data, mode_name, output_dir):
@@ -315,7 +264,7 @@ def export_single_calculation_csv(alloy_info, calculation_data, mode_name, outpu
     print(f"    Metadata: {metadata_filename}")
 
 
-def attempt_calculation(session, alloy_info, database, calc_type, mode_name, run_summary):
+def attempt_calculation(session, alloy_info, database, calc_type, mode_name):
     """"Attempt a single calculation."""    
     # Debug: Print alloy information
     print("    Alloy Info:")
@@ -348,8 +297,8 @@ def attempt_calculation(session, alloy_info, database, calc_type, mode_name, run
         if database.startswith('TCNI') and ionic_elements_present:
             options = ScheilOptions().set_liquid_phase('IONIC_LIQ')
             scheil_calc = scheil_calc.with_options(options)
-            run_summary['ionic_liq_used'] += 1
             print(f"    Using IONIC_LIQ (ionic elements found: {ionic_elements_present})")
+
         else:
             print("    Using standard liquid phase")
 
@@ -502,10 +451,9 @@ def attempt_calculation(session, alloy_info, database, calc_type, mode_name, run
         if first_steep_start is not None and first_steep_end is not None:
             initial_temp_corrected = temperature[first_steep_end]
             correction_index = first_steep_end
-            run_summary['steep_drops_detected'] += 1
-            print(f"    Steepness correction: {initial_temp_original:.1f}Â°C â†' {initial_temp_corrected:.1f}Â°C")
+            print(f"    Steepness correction: {initial_temp_original:.1f}°C ' {initial_temp_corrected:.1f}°C")
             print(f"    First steep region: indices {first_steep_start} to {first_steep_end-1}")
-            print(f"    Using temperature at index {first_steep_end}: {initial_temp_corrected:.1f}Â°C")
+            print(f"    Using temperature at index {first_steep_end}: {initial_temp_corrected:.1f}°C")
             print("" + "-"*50)
         else:
             print(f"    No correction applied - steep_start: {first_steep_start}, steep_end: {first_steep_end}")
@@ -541,21 +489,8 @@ def attempt_calculation(session, alloy_info, database, calc_type, mode_name, run
             'errors': []
         }
     except Exception as e:
-        print(f"    Error in {mode_name} calculation: {e}")
-        error_info = {
-            'alloy_index': alloy_info['index'],
-            'alloy_name': alloy_info['name'],
-            'calc_type': mode_name,
-            'database': database,
-            'error_type': type(e).__name__,
-            'error_msg': str(e),
-            'timestamp': datetime.now().isoformat()
-        }
-        return {
-            'success': False,
-            'data': None,
-            'errors': [error_info]
-        }
+        print(f"    ✗ {mode_name} calculation failed: {type(e).__name__}: {e}")
+        return {'success': False}
 
 def detect_steep_drop (phase, fs, temp_c, threshold=2000, fs_limit=0.1):
     """Detect steep drop in temperature for a given phase."""
@@ -574,38 +509,7 @@ def detect_steep_drop (phase, fs, temp_c, threshold=2000, fs_limit=0.1):
     return False, 0
 
 
-def export_metadata(run_summary, all_errors, output_dir):
-    """Export run metadata and errors to JSON file."""
-    metadata = {
-        'run_summary': run_summary,
-        'errors': all_errors,
-        'error_summary': {
-            'total_errors': len(all_errors),
-            'error_types': {},
-            'alloys_with_errors': []
-        }
-    }
-    
-    # Summarize error types
-    for error in all_errors:
-        error_type = error['error_type']
-        if error_type not in metadata['error_summary']['error_types']:
-            metadata['error_summary']['error_types'][error_type] = 0
-        metadata['error_summary']['error_types'][error_type] += 1
-        
-        alloy_id = f"{error['alloy_index']}_{error['alloy_name']}"
-        if alloy_id not in metadata['error_summary']['alloys_with_errors']:
-            metadata['error_summary']['alloys_with_errors'].append(alloy_id)
-    
-    # Export to JSON
-    output_file = output_dir / 'calculation_metadata.json'
-    with open(output_file, 'w') as f:
-        json.dump(metadata, f, indent=2)
-    
-    print(f"Metadata exported to {output_file}")
-
-
 if __name__ == "__main__":
-    cache_dir = Path.cwd() / "tc_cache"
-    run_tcpython(cache_dir)
-    print("All calculations complete.")
+    input_file = sys.argv[1] if len(sys.argv) > 1 else 'processed_data.pkl'
+    cache_dir = Path.cwd() / "tc_cache"  
+    run_tcpython(cache_dir, input_file)

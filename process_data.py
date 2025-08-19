@@ -11,7 +11,7 @@ def process_data(input_file=r'../Alloy Subset Crack Data.csv'):
 
     # Clean up copied df
     unecessary_columns = [
-        'Ref #', 'Reference', 'Source', 'Particle Additions',
+        'Ref #', 'Source', 'Reference', 'Particle Additions',
         'Amount (wt%)','Crack Y or N (1 or 0)',
         'Max Crack Length (µm)', 'Average Crack Length (µm)',
         '# of Cracks', 'Area (mm^2)', 'Crack Density (mm^-1)',
@@ -27,7 +27,9 @@ def process_data(input_file=r'../Alloy Subset Crack Data.csv'):
             'HEA':            'TCHEA7',
             'Steel':          'TCFE13',
             'Stainless Steel': 'TCFE13',
-            'Titanium':       'TCTI5'
+            'Titanium':       'TCTI5',
+            'Ti-Al':            'TCTI5',
+            'Fe-Ni-Cr':         'TCFE13'
         }
     df['database'] = df['Alloy Family'].map(database_map).fillna('SSOL8')
     # Identify element columns, convert to numeric, fill NaNs with 0
@@ -69,4 +71,4 @@ def process_data(input_file=r'../Alloy Subset Crack Data.csv'):
     print("The .pkl is used to run tc_python and .csv is for visualization.")
 
 if __name__ == "__main__":
-    process_data(input_file="../Alloy test.csv")
+    process_data(input_file="../Alloy Master Crack Data.csv")
