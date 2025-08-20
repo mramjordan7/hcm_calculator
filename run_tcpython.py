@@ -113,10 +113,11 @@ def run_tcpython(cache_dir, input_file, results_dir=None):
                 all_calculation_errors.extend(alloy_errors)
 
     if all_calculation_errors:
-        calc_errors_file = results_path / 'calculation_errors.json'
+        alloy_idx = df.iloc[0].name
+        calc_errors_file = results_path / f'calculation_errors_{alloy_idx}.json'
         with open(calc_errors_file, 'w') as f:
             json.dump(all_calculation_errors, f, indent=2)
-        print(f"\n✓ Calculation errors saved to {calc_errors_file}")
+        print(f"\\n✓ Calculation errors saved to {calc_errors_file}")
 
     print("" + "="*70)
     print("\nCalculation complete.")

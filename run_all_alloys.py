@@ -69,7 +69,7 @@ def run_all_alloys():
                 sys.executable, 'run_tcpython.py', str(temp_file),
                 str(start_time_results_dir)
                 ], capture_output=True, text=True,
-                timeout=10800)  # 3hr timeout
+                timeout=5400)  # 1.5hr timeout
 
             print(result.stdout)
 
@@ -136,17 +136,22 @@ def run_all_alloys():
     # Collect calculation errors from individual alloy processing
     print("\nCollecting calculation errors...")
     calculation_errors = []
-    calc_errors_file = start_time_results_dir / 'calculation_errors.json'
+    # Look for all calculation_errors_*.json files
+    error_files = list(start_time_results_dir.glob('calculation_errors_*.json'))
+    print(f"Found {len(error_files)} error files")
 
-    if calc_errors_file.exists():
+    for error_file in error_files:
         try:
-            with open(calc_errors_file, 'r') as f:
-                calculation_errors = json.load(f)
-            print(f"✓ Loaded {len(calculation_errors)} calculation errors")
+            with open(error_file, 'r') as f:
+                file_errors = json.load(f)
+                calculation_errors.extend(file_errors)
+            print(f"✓ Loaded {len(file_errors)} errors from {error_file.name}")
+            # Clean up the individual error file
+            error_file.unlink()
         except Exception as e:
-            print(f"Warning: Could not load calculation errors: {e}")
-    else:
-        print("No calculation_errors.json file found")
+            print(f"Warning: Could not load {error_file}: {e}")
+
+    print(f"✓ Total calculation errors collected: {len(calculation_errors)}")
 
     # Combine all errors (calculation + subprocess)
     all_errors = calculation_errors + subprocess_errors
@@ -187,11 +192,6 @@ def run_all_alloys():
     output_file = start_time_results_dir / 'overall_calculation_metadata.json'
     with open(output_file, 'w') as f:
         json.dump(error_metadata, f, indent=2)
-
-    # Clean up temporary calculation errors file
-    if calc_errors_file.exists():
-        calc_errors_file.unlink()
-        print("✓ Cleaned up temporary calculation_errors.json")
 
     # Final summary output
     print("\n" + "=" * 60)
