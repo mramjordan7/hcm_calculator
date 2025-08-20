@@ -7,8 +7,25 @@ processing parameters, and HCM results from both classic and solute trapping cal
 Exports combined datasets to Excel format for machine learning and correlation analysis.
 """
 import pandas as pd
+from pathlib import Path
+
 
 def prepare_data_for_analysis():
+    """Prepare combined analysis dataset from latest calculation results."""
+    # Find the most recent timestamped results directory
+    base_results_dir = Path('results')
+    if not base_results_dir.exists():
+        print("Error: No results directory found")
+        return
+
+    # Get most recent timestamped directory
+    timestamped_dirs = [d for d in base_results_dir.iterdir() if d.is_dir()]
+    if not timestamped_dirs:
+        print("Error: No timestamped result directories found")
+        return
+
+    latest_results_dir = max(timestamped_dirs, key=lambda x: x.name)
+    print(f"Using results from: {latest_results_dir}")
     # Load and clean input file data
     df_load_input = pd.read_csv(r"../Alloy Master Crack Data.csv")
     df_input = df_load_input.copy()
@@ -20,18 +37,36 @@ def prepare_data_for_analysis():
         ]
     df_input.drop(columns=unecessary_columns, inplace=True)
 
+    # Load and clean processed data file from working_files
+    working_files_dir = Path('working_files')
+    processed_data_file = working_files_dir / 'processed_data.pkl'
+
+    if not processed_data_file.exists():
+        print(f"Error: {processed_data_file} not found")
+        return
+
     # Load and clean processed data file
-    df_load_processed_data = pd.read_csv('processed_data.csv')
+    df_load_processed_data = pd.read_pickle(processed_data_file)
     df_processed_data = df_load_processed_data.copy()
 
     processed_data = df_processed_data[['database', 'scan_speed_mps']]
 
-    # Load alloy hcm results
-    df_load_cl_hcm_results = pd.read_excel("alloy_index_results.xlsx", sheet_name='classic')
+    # Load alloy HCM results from latest timestamped directory
+    hcm_results_file = latest_results_dir / 'alloy_index_results.xlsx'
+
+    if not hcm_results_file.exists():
+        print(f"Error: {hcm_results_file} not found")
+        print("Run index_calculations.py first to generate HCM results")
+        return
+
+    print(f"Loading HCM results from: {hcm_results_file}")
+
+    df_load_cl_hcm_results = pd.read_excel(hcm_results_file, sheet_name='classic')
     cl_hcm_results = df_load_cl_hcm_results.copy()
-    df_load_st_hcm_results = pd.read_excel('alloy_index_results.xlsx', sheet_name='solute_trapping')
+    df_load_st_hcm_results = pd.read_excel(hcm_results_file, sheet_name='solute_trapping')
     st_hcm_results = df_load_st_hcm_results.copy()
 
+    # Combine classic data
     classic_data = [df_input, processed_data, cl_hcm_results]
     df_classic_combined = pd.concat(classic_data, axis=1)
     print("=== CREATING SOLUTE TRAPPING DATASET ===")
@@ -45,15 +80,15 @@ def prepare_data_for_analysis():
 
     # Merge base with solute trapping HCM results
     df_solute_trap_combined = pd.merge(
-        df_base, 
-        st_hcm_for_merge, 
-        on='Sheet_Name', 
+        df_base,
+        st_hcm_for_merge,
+        on='Sheet_Name',
         how='left',  # Keep all rows from base, fill NaN where solute data missing
         suffixes=('', '_solute')
     )
 
     # Export combined datasets to Excel
-    output_filename = 'hcm_analysis_data.xlsx'
+    output_filename = latest_results_dir / 'hcm_analysis_data.xlsx'
 
     with pd.ExcelWriter(output_filename, engine='openpyxl') as writer:
         df_classic_combined.to_excel(writer, sheet_name='classic', index=False)
