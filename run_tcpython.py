@@ -194,7 +194,8 @@ def process_alloy(session, alloy_info, databases_and_elements, classic_dir,
             alloy_info=alloy_info,
             database=database,
             calc_type=mode_config['calc_type'],
-            mode_name=mode_name
+            mode_name=mode_name,
+            retry_context=None  # No retry context for original attempt
         )
 
         if mode_result['success']:
@@ -208,9 +209,12 @@ def process_alloy(session, alloy_info, databases_and_elements, classic_dir,
             print(f"    {mode_name} calculation successful and exported")
         else:
             print("    CALCULATION FAILED - Analyzing cause...")
-            if mode_result['errors']:
-                alloy_errors.extend(mode_result['errors'])
-                error_details = mode_result['errors'][0]
+            # Collect original errors WITHOUT modification
+            original_errors = mode_result['errors']
+            alloy_errors.extend(original_errors)
+
+            if original_errors:
+                error_details = original_errors[0]
                 print(f"      Error Type: {error_details['error_type']}")
                 print(f"      Error Message: {error_details['error_msg']}")
                 print(f"      Database Used: {error_details.get('database', 'Unknown')}")
@@ -233,8 +237,8 @@ def process_alloy(session, alloy_info, databases_and_elements, classic_dir,
                 filtered_wt_pcts = []
 
                 for element, wt_pct in zip(alloy_info['other_elements'],
-                                            alloy_info['other_elements_wt_pct'
-                                                       ]):
+                                           alloy_info['other_elements_wt_pct'
+                                                      ]):
                     if element not in PROBLEM_ELEMENTS:
                         filtered_elements.append(element)
                         filtered_wt_pcts.append(wt_pct)
@@ -248,13 +252,24 @@ def process_alloy(session, alloy_info, databases_and_elements, classic_dir,
                 filtered_alloy['other_elements'] = filtered_elements
                 filtered_alloy['other_elements_wt_pct'] = filtered_wt_pcts
 
-                # Retry calculation
+                retry_context = {
+                    'retry_attempted': True,
+                    'retry_successful': False,  # Will update this if successful
+                    'elements_filtered': True,
+                    'removed_elements': list(removed_elements),
+                    'original_error_type': original_errors[0]['error_type']
+                    if original_errors else 'Unknown',
+                    'contains_problem_elements': True
+                }
+
+                # Retry calculation with context
                 retry_result = attempt_calculation(
                     session=session,
                     alloy_info=filtered_alloy,
                     database=database,
                     calc_type=mode_config['calc_type'],
-                    mode_name=mode_name
+                    mode_name=mode_name,
+                    retry_context=retry_context  # Pass retry context
                 )
 
                 if retry_result['success']:
@@ -276,6 +291,12 @@ def process_alloy(session, alloy_info, databases_and_elements, classic_dir,
                     if retry_result['errors']:
                         alloy_errors.extend(retry_result['errors'])
                     print("    ✗ Retry also failed")
+                    # Update retry context for failed retry
+                    retry_context['retry_successful'] = False
+
+                    # Collect retry errors (they already have the retry context)
+                    retry_errors = retry_result['errors']
+                    alloy_errors.extend(retry_errors)
             else:
                 # No problem elements, just failed
                 mode_result['errors'][0]['retry_attempted'] = False
@@ -314,7 +335,7 @@ def export_single_calculation_csv(alloy_info, calculation_data, mode_name,
     print(f"    Metadata: {metadata_filename}")
 
 
-def attempt_calculation(session, alloy_info, database, calc_type, mode_name):
+def attempt_calculation(session, alloy_info, database, calc_type, mode_name, retry_context=None):
     """Attempt a single calculation."""
     # Debug: Print alloy information
     print("    Alloy Info:")
@@ -555,6 +576,14 @@ def attempt_calculation(session, alloy_info, database, calc_type, mode_name):
             'error_msg': str(e),
             'timestamp': datetime.now().isoformat()
         }
+        # Add retry context if this is a retry attempt
+        if retry_context:
+            error_info.update(retry_context)
+        else:
+            # Mark as original attempt
+            error_info['retry_attempted'] = False
+            error_info['contains_problem_elements'] = bool(set(alloy_info['other_elements']) & PROBLEM_ELEMENTS)
+
         return {
             'success': False,
             'data': None,

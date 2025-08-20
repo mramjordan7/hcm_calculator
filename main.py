@@ -1,4 +1,10 @@
-from pathlib import Path
+"""
+Hot Cracking Analysis Pipeline - Main Orchestration Script.
+
+Runs the complete hot cracking analysis workflow from raw alloy data to final
+analysis datasets. Executes all pipeline steps in sequence with error handling
+and progress reporting.
+"""
 
 import importlib.util
 
@@ -10,34 +16,51 @@ if importlib.util.find_spec("tc_python") is None:
     )
 
 from process_data import process_data
-from run_tcpython import run_tcpython
+from load_databases import load_databases_and_elements
+from run_all_alloys import run_all_alloys
 from index_calculations import calculate_indexes
 from prepare_analysis_dataset import prepare_data_for_analysis
 
 
-# Process input data
-print("\n" + "="*50)
-print("Processing input data...")
-input_file = "../Alloy Master Crack Data.csv"
-print(f"---Using the input file: '{input_file}' ---")
-print("\n" + "="*50)
-process_data(input_file=input_file)
+def main():
+    """Run complete hot cracking analysis pipeline."""
+    # Step 1: Process input data
+    print("\n" + "="*50)
+    print("Step 1: Processing input data...")
+    input_file = "../Alloy Master Crack Data.csv"
+    print(f"Using input file: '{input_file}'")
+    print("="*50)
+    process_data(input_file=input_file)
 
-# Run Scheil calculations
-print("\n" + "="*50)
-print("Starting ThermoCalc session...")
-print("\n" + "="*50)
-cache_dir = Path.cwd() / "tc_cache"
-run_tcpython(cache_dir)
+    # Step 2: Load ThermoCalc databases
+    print("\n" + "="*50)
+    print("Step 2: Loading ThermoCalc databases...")
+    print("="*50)
+    load_databases_and_elements()
 
-# Calculate hot cracking indexes from each alloys Scheil curve
-print("\n" + "="*50)
-print("Calculation hot cracking model indexes...")
-print("\n" + "="*50)
-calculate_indexes()
+    # Step 3: Run Scheil calculations for all alloys
+    print("\n" + "="*50)
+    print("Step 3: Running ThermoCalc calculations...")
+    print("="*50)
+    run_all_alloys()
 
-# Prepare final analysis dataset
-print("\n" + "="*50)
-print("Preparing analysis dataset...")
-print("\n" + "="*50)
-prepare_data_for_analysis()
+    # Step 4: Calculate hot cracking indexes
+    print("\n" + "="*50)
+    print("Step 4: Calculating hot cracking indexes...")
+    print("="*50)
+    calculate_indexes()
+
+    # Step 5: Prepare final analysis dataset
+    print("\n" + "="*50)
+    print("Step 5: Preparing analysis dataset...")
+    print("="*50)
+    prepare_data_for_analysis()
+
+    print("\n" + "="*50)
+    print("HOT CRACKING ANALYSIS PIPELINE COMPLETE")
+    print("="*50)
+    print("Check the latest timestamped folder in 'results/' for outputs")
+
+
+if __name__ == "__main__":
+    main()
