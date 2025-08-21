@@ -292,12 +292,7 @@ def process_alloy(session, alloy_info, databases_and_elements, classic_dir,
                     if retry_result['errors']:
                         alloy_errors.extend(retry_result['errors'])
                     print("    ✗ Retry also failed")
-                    # Update retry context for failed retry
-                    retry_context['retry_successful'] = False
 
-                    # Collect retry errors (they already have the retry context)
-                    retry_errors = retry_result['errors']
-                    alloy_errors.extend(retry_errors)
             else:
                 # No problem elements, just failed
                 mode_result['errors'][0]['retry_attempted'] = False

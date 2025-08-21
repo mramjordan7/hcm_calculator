@@ -67,7 +67,7 @@ def process_data(input_file=r'../Alloy Subset Crack Data.csv'):
     df['scan_speed_mps'] = df['Scanning Velo (mm/s)'] / 1000.0
     df['scan_speed_mps'] = (
             df.groupby('Alloy Family')['scan_speed_mps']
-            .transform(lambda x: x.fillna(x.mean()))
+            .transform(lambda x: x.fillna(round(x.mean(), 3)))
             .fillna(1.0)
     )
 

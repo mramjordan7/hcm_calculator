@@ -51,6 +51,7 @@ def run_all_alloys():
     # Track results
     subprocess_errors = []
     failed_alloys = []
+    alloy_stdout_logs = {}
     start_time = datetime.now()
 
     print("\nStarting individual alloy processing...")
@@ -69,7 +70,15 @@ def run_all_alloys():
                 sys.executable, 'run_tcpython.py', str(temp_file),
                 str(start_time_results_dir)
                 ], capture_output=True, text=True,
-                timeout=5400)  # 1.5hr timeout
+                timeout=3600)  # 1.0hr timeout
+
+            # Store stdout for this alloy
+            alloy_stdout_logs[idx] = {
+                'alloy_name': alloy_name,
+                'stdout': result.stdout,
+                'stderr': result.stderr,
+                'return_code': result.returncode
+            }
 
             print(result.stdout)
 
@@ -91,6 +100,8 @@ def run_all_alloys():
                     'exit_code': result.returncode,
                     'stdout_snippet': result.stdout[-200:]
                     if result.stdout else '',
+                    'stdout_full': result.stdout,  # Full stdout
+                    'stderr_full': result.stderr,  # Full stderr
                     'timestamp': datetime.now().isoformat()
                 }
                 subprocess_errors.append(subprocess_error)
@@ -107,6 +118,8 @@ def run_all_alloys():
                 'error_type': 'TimeoutError',
                 'error_msg': f"Calculation timed out after {e.timeout} seconds",
                 'timeout_seconds': e.timeout,
+                'stdout_partial': e.stdout if hasattr(e, 'stdout') else "No stdout available",
+                'stderr_partial': e.stderr if hasattr(e, 'stderr') else "No stderr available",
                 'timestamp': datetime.now().isoformat()
             }
             subprocess_errors.append(timeout_error)
@@ -121,6 +134,7 @@ def run_all_alloys():
                 'alloy_name': alloy_name,
                 'error_type': 'SubprocessError',
                 'error_msg': str(e),
+                'stdout_available': False,
                 'timestamp': datetime.now().isoformat()
             }
             subprocess_errors.append(general_error)
@@ -153,8 +167,17 @@ def run_all_alloys():
 
     print(f"✓ Total calculation errors collected: {len(calculation_errors)}")
 
+    # Enhance calculation errors with stdout information
+    for calc_error in calculation_errors:
+        alloy_idx = calc_error.get('alloy_index')
+        if alloy_idx in alloy_stdout_logs:
+            calc_error['stdout_full'] = alloy_stdout_logs[alloy_idx]['stdout']
+            calc_error['stderr_full'] = alloy_stdout_logs[alloy_idx]['stderr']
+            calc_error['subprocess_return_code'] = alloy_stdout_logs[alloy_idx]['return_code']
+
     # Combine all errors (calculation + subprocess)
     all_errors = calculation_errors + subprocess_errors
+    all_errors.sort(key=lambda error: error.get('alloy_index', -1))
 
     # Analyze error types
     error_types = {}
