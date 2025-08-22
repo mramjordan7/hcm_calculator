@@ -170,18 +170,17 @@ def run_all_alloys():
             print(f"Warning: Could not load {error_file}: {e}")
 
     # Add alloys with calculation errors to failed_alloys list
-    existing_failed_indices = {int(failed_entry.split('_')[0]) for failed_entry in failed_alloys}   
-    for calc_error_idx in failed_alloy_indices_from_calc_errors:
-        if calc_error_idx not in existing_failed_indices:
-            # Get alloy name from df
-            if calc_error_idx < len(df):
-                alloy_name = df.iloc[calc_error_idx].get('Alloy Name', f'Unknown_{calc_error_idx}')
 
-                # Get calc modes for this alloy and create entries for each mode
-                calc_modes = failed_alloy_calc_modes.get(calc_error_idx, {'unknown'})
-                for calc_mode in calc_modes:
-                    failed_alloys.append(f"{calc_error_idx}_{clean_filename(alloy_name)}_{calc_mode}")
-                    print(f"  Added alloy {calc_error_idx} ({alloy_name}) - {calc_mode} to failed list due to calculation errors")
+    for calc_error_idx in failed_alloy_indices_from_calc_errors:
+        # Get alloy name from df
+        if calc_error_idx < len(df):
+            alloy_name = df.iloc[calc_error_idx].get('Alloy Name', f'Unknown_{calc_error_idx}')
+
+            # Get calc modes for this alloy and create entries for each mode
+            calc_modes = failed_alloy_calc_modes.get(calc_error_idx, {'unknown'})
+            for calc_mode in calc_modes:
+                failed_alloys.append(f"{calc_error_idx}_{clean_filename(alloy_name)}_{calc_mode}")
+                print(f"  Added alloy {calc_error_idx} ({alloy_name}) - {calc_mode} to failed list due to calculation errors")
 
     print(f"✓ Total calculation errors collected: {len(calculation_errors)}")
     print(f"✓ Total failed alloys (subprocess + calculation): {len(failed_alloys)}")

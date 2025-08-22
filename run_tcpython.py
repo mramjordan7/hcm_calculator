@@ -78,8 +78,6 @@ def run_tcpython(cache_dir, input_file, results_dir=None):
 
     # Process each alloy in processed data with individual cache isolation
     for idx, row in df.iterrows():
-        print("" + "="*70)
-        print(f"\nProcessing alloy {idx + 1}/{len(df)}: {row.get('Alloy Name')}")
 
         # Create individual cache directory for single alloy
         alloy_cache_dir = main_cache_dir / f"alloy_{idx}_{clean_filename(row.get('Alloy Name', 'unknown'))}_{row.get('scan_speed_mps')}mps"
