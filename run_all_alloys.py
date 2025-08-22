@@ -13,6 +13,7 @@ from pathlib import Path
 import sys
 import subprocess
 import json
+from run_tcpython import clean_filename
 
 
 def run_all_alloys():
@@ -51,7 +52,7 @@ def run_all_alloys():
     # Track results
     subprocess_errors = []
     failed_alloys = []
-    alloy_stdout_logs = {}
+    # alloy_stdout_logs = {}
     start_time = datetime.now()
 
     print("\nStarting individual alloy processing...")
@@ -72,14 +73,6 @@ def run_all_alloys():
                 ], capture_output=True, text=True,
                 timeout=3600)  # 1.0hr timeout
 
-            # Store stdout for this alloy
-            alloy_stdout_logs[idx] = {
-                'alloy_name': alloy_name,
-                'stdout': result.stdout,
-                'stderr': result.stderr,
-                'return_code': result.returncode
-            }
-
             print(result.stdout)
 
             if result.returncode == 0:
@@ -88,7 +81,7 @@ def run_all_alloys():
             else:
                 print(
                     f"  ✗ Subprocess failed (exit code: {result.returncode})")
-                failed_alloys.append((idx, alloy_name))
+                failed_alloys.append(f"{idx}_{clean_filename(alloy_name)}_subprocess")
 
                 # Collect subprocess failure error
                 subprocess_error = {
@@ -100,8 +93,6 @@ def run_all_alloys():
                     'exit_code': result.returncode,
                     'stdout_snippet': result.stdout[-200:]
                     if result.stdout else '',
-                    'stdout_full': result.stdout,  # Full stdout
-                    'stderr_full': result.stderr,  # Full stderr
                     'timestamp': datetime.now().isoformat()
                 }
                 subprocess_errors.append(subprocess_error)
@@ -109,7 +100,7 @@ def run_all_alloys():
 
         except subprocess.TimeoutExpired as e:
             print(f"  ✗ Subprocess timed out after {e.timeout} seconds")
-            failed_alloys.append((idx, alloy_name))
+            failed_alloys.append(f"{idx}_{clean_filename(alloy_name)}_timeout")
 
             # Collect timeout error
             timeout_error = {
@@ -118,15 +109,13 @@ def run_all_alloys():
                 'error_type': 'TimeoutError',
                 'error_msg': f"Calculation timed out after {e.timeout} seconds",
                 'timeout_seconds': e.timeout,
-                'stdout_partial': e.stdout if hasattr(e, 'stdout') else "No stdout available",
-                'stderr_partial': e.stderr if hasattr(e, 'stderr') else "No stderr available",
                 'timestamp': datetime.now().isoformat()
             }
             subprocess_errors.append(timeout_error)
 
         except Exception as e:
             print(f"  ✗ Subprocess error: {e}")
-            failed_alloys.append((idx, alloy_name))
+            failed_alloys.append(f"{idx}_{clean_filename(alloy_name)}_subprocess_error")
 
             # Collect general subprocess error
             general_error = {
@@ -134,7 +123,6 @@ def run_all_alloys():
                 'alloy_name': alloy_name,
                 'error_type': 'SubprocessError',
                 'error_msg': str(e),
-                'stdout_available': False,
                 'timestamp': datetime.now().isoformat()
             }
             subprocess_errors.append(general_error)
@@ -154,26 +142,52 @@ def run_all_alloys():
     error_files = list(start_time_results_dir.glob('calculation_errors_*.json'))
     print(f"Found {len(error_files)} error files")
 
+    failed_alloy_indices_from_calc_errors = set()  # Track which alloys had calc errors
+    failed_alloy_calc_modes = {}
+
     for error_file in error_files:
         try:
             with open(error_file, 'r') as f:
                 file_errors = json.load(f)
                 calculation_errors.extend(file_errors)
+
+                # Track alloy indices and their calc modes that had calculation errors
+                for error in file_errors:
+                    alloy_idx = error.get('alloy_index')
+                    calc_mode = error.get('calc_type', 'unknown')
+
+                    failed_alloy_indices_from_calc_errors.add(alloy_idx)
+
+                    # Track calc modes for this alloy
+                    if alloy_idx not in failed_alloy_calc_modes:
+                        failed_alloy_calc_modes[alloy_idx] = set()
+                    failed_alloy_calc_modes[alloy_idx].add(calc_mode)
+
             print(f"✓ Loaded {len(file_errors)} errors from {error_file.name}")
             # Clean up the individual error file
             error_file.unlink()
         except Exception as e:
             print(f"Warning: Could not load {error_file}: {e}")
 
-    print(f"✓ Total calculation errors collected: {len(calculation_errors)}")
+    # Add alloys with calculation errors to failed_alloys list
+    existing_failed_indices = {int(failed_entry.split('_')[0]) for failed_entry in failed_alloys}   
+    for calc_error_idx in failed_alloy_indices_from_calc_errors:
+        if calc_error_idx not in existing_failed_indices:
+            # Get alloy name from df
+            if calc_error_idx < len(df):
+                alloy_name = df.iloc[calc_error_idx].get('Alloy Name', f'Unknown_{calc_error_idx}')
 
-    # Enhance calculation errors with stdout information
-    for calc_error in calculation_errors:
-        alloy_idx = calc_error.get('alloy_index')
-        if alloy_idx in alloy_stdout_logs:
-            calc_error['stdout_full'] = alloy_stdout_logs[alloy_idx]['stdout']
-            calc_error['stderr_full'] = alloy_stdout_logs[alloy_idx]['stderr']
-            calc_error['subprocess_return_code'] = alloy_stdout_logs[alloy_idx]['return_code']
+                # Get calc modes for this alloy and create entries for each mode
+                calc_modes = failed_alloy_calc_modes.get(calc_error_idx, {'unknown'})
+                for calc_mode in calc_modes:
+                    failed_alloys.append(f"{calc_error_idx}_{clean_filename(alloy_name)}_{calc_mode}")
+                    print(f"  Added alloy {calc_error_idx} ({alloy_name}) - {calc_mode} to failed list due to calculation errors")
+
+    print(f"✓ Total calculation errors collected: {len(calculation_errors)}")
+    print(f"✓ Total failed alloys (subprocess + calculation): {len(failed_alloys)}")
+
+    # Sort failed_alloys by index (ascending)
+    failed_alloys.sort(key=lambda x: int(x.split('_')[0]))
 
     # Combine all errors (calculation + subprocess)
     all_errors = calculation_errors + subprocess_errors
@@ -201,14 +215,11 @@ def run_all_alloys():
             'calculation_errors': len(calculation_errors),
             'subprocess_errors': len(subprocess_errors)
         },
-        'all_errors': all_errors,
         'error_summary': {
             'error_types': error_types,
-            'failed_alloy_names': [name for idx, name in failed_alloys],
-            'most_common_error': max(error_types.items(),
-                                     key=lambda x: x[1])[0]
-            if error_types else None
-        }
+            'failed_alloy_names': failed_alloys
+        },
+        'all_errors': all_errors
     }
 
     # Export error-focused metadata
@@ -238,8 +249,8 @@ def run_all_alloys():
 
     if failed_alloys:
         print(f"\nFailed alloys ({len(failed_alloys)}):")
-        for idx, name in failed_alloys[:10]:  # Show first 10
-            print(f"  {idx}: {name}")
+        for failed_entry in failed_alloys[:10]:  # Show first 10
+            print(f"  {failed_entry}")
         if len(failed_alloys) > 10:
             print(f"  ... and {len(failed_alloys) - 10} more")
 
