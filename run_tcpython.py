@@ -293,8 +293,6 @@ def process_alloy(session, alloy_info, databases_and_elements, classic_dir,
 
             else:
                 # No problem elements, just failed
-                mode_result['errors'][0]['retry_attempted'] = False
-                mode_result['errors'][0]['contains_problem_elements'] = False
                 print(f"    Failed: {mode_result['errors'][-1]['error_msg']}")
     if alloy_errors:
         print(f"\n  ⚠ Total errors for {alloy_info['name']}: {len(alloy_errors)}")
