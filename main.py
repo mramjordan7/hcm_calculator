@@ -7,6 +7,7 @@ and progress reporting.
 """
 
 import importlib.util
+import sys
 
 # Check if package is installed
 if importlib.util.find_spec("tc_python") is None:
@@ -22,45 +23,49 @@ from index_calculations import calculate_indexes
 from prepare_analysis_dataset import prepare_data_for_analysis
 
 
-def main():
+def main(input_file=None):
     """Run complete hot cracking analysis pipeline."""
     # Step 1: Process input data
     print("\n" + "="*50)
     print("Step 1: Processing input data...")
-    input_file = "../Alloy Master Crack Data.csv"
+    if input_file is None:
+        if len(sys.argv) > 1:
+            input_file = sys.argv[1]
+        else:
+            input_file = input("Enter path to input CSV file: ").strip()
     print(f"Using input file: '{input_file}'")
     print("="*50)
     process_data(input_file=input_file)
-
+ 
     # Step 2: Load ThermoCalc databases
     print("\n" + "="*50)
     print("Step 2: Loading ThermoCalc databases...")
     print("="*50)
     load_databases_and_elements()
-
+ 
     # Step 3: Run Scheil calculations for all alloys
     print("\n" + "="*50)
     print("Step 3: Running ThermoCalc calculations...")
     print("="*50)
     run_all_alloys()
-
+ 
     # Step 4: Calculate hot cracking indexes
     print("\n" + "="*50)
     print("Step 4: Calculating hot cracking indexes...")
     print("="*50)
     calculate_indexes()
-
+ 
     # Step 5: Prepare final analysis dataset
     print("\n" + "="*50)
     print("Step 5: Preparing analysis dataset...")
     print("="*50)
-    prepare_data_for_analysis()
-
+    prepare_data_for_analysis(input_file=input_file)
+ 
     print("\n" + "="*50)
     print("HOT CRACKING ANALYSIS PIPELINE COMPLETE")
     print("="*50)
     print("Check the latest timestamped folder in 'results/' for outputs")
-
-
+ 
+ 
 if __name__ == "__main__":
     main()

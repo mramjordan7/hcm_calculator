@@ -10,8 +10,17 @@ import pandas as pd
 from pathlib import Path
 
 
-def prepare_data_for_analysis():
+def prepare_data_for_analysis(input_file=None):
     """Prepare combined analysis dataset from latest calculation results."""
+    # Resolve input file path
+    if input_file is None:
+        input_file = input("Enter path to input CSV file: ").strip()
+
+    input_path = Path(input_file)
+    if not input_path.exists():
+        print(f"Error: Input file not found: {input_path}")
+        return
+
     # Find the most recent timestamped results directory
     base_results_dir = Path('results')
     if not base_results_dir.exists():
@@ -26,8 +35,9 @@ def prepare_data_for_analysis():
 
     latest_results_dir = max(timestamped_dirs, key=lambda x: x.name)
     print(f"Using results from: {latest_results_dir}")
+
     # Load and clean input file data
-    df_load_input = pd.read_csv(r"../Alloy Master Crack Data.csv")
+    df_load_input = pd.read_csv(input_path)
     df_input = df_load_input.copy()
 
     unecessary_columns = [
@@ -83,7 +93,7 @@ def prepare_data_for_analysis():
         df_base,
         st_hcm_for_merge,
         on='Sheet_Name',
-        how='left',  # Keep all rows from base, fill NaN where solute data missing
+        how='left',
         suffixes=('', '_solute')
     )
 

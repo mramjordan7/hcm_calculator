@@ -206,10 +206,6 @@ def run_all_alloys():
             'duration_seconds': duration.total_seconds(),
             'duration_formatted': str(duration),
             'total_alloys': total_alloys,
-            'successful_alloys': successful_count,
-            'failed_alloys': len(failed_alloys),
-            'success_rate_percent': round(
-                (successful_count / total_alloys) * 100, 1),
             'total_errors': len(all_errors),
             'calculation_errors': len(calculation_errors),
             'subprocess_errors': len(subprocess_errors)
@@ -231,8 +227,6 @@ def run_all_alloys():
     print("PROCESSING COMPLETE")
     print("=" * 60)
     print(f"Total alloys processed: {total_alloys}")
-    print(f"Successful: {successful_count} ({round((successful_count/total_alloys)*100, 1)}%)")
-    print(f"Failed: {len(failed_alloys)} ({round((len(failed_alloys)/total_alloys)*100, 1)}%)")
     print(f"Total processing time: {duration}")
     print("\nError Summary:")
     print(f"  Total errors logged: {len(all_errors)}")

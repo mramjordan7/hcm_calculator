@@ -13,37 +13,49 @@ from scipy.interpolate import interp1d
 
 
 def kous_model(fraction_solid: np.ndarray, temperature_celcius: np.ndarray,
-               fs1: float = 0.87, fs2: float = 0.94) -> float:
+               fs_min: float = 0.64, fs_max: float = 0.9604) -> float:
     """
     Calculate Kou's hot cracking susceptibility index (KHCS).
-
+ 
+    Maximum absolute steepness of T vs sqrt(fs) in the vulnerable solidification
+    range. Upper limit at fs=0.9604 (sqrt(fs)=0.98) based on Xia & Kou (2020) —
+    extensive bonding occurs at sqrt(fs)=0.99, making cracking unlikely beyond
+    this point. Uses np.gradient for derivative calculation.
+ 
     Parameters
     ----------
     fraction_solid : np.ndarray
         Fraction solid array.
     temperature_celcius : np.ndarray
         Temperature array (°C).
-    fs1 : float
-        First fracion of solid point (default = 0.87).
-    fs2 : float
-        Second fracion of solid point (default = 0.94).
-
+    fs_min : float
+        Lower fraction solid bound (default = 0.64).
+    fs_max : float
+        Upper fraction solid bound (default = 0.9604, i.e. sqrt(fs) = 0.98).
+ 
     Returns
     -------
         KHCS value: float
     """
     fs_arr = np.asarray(fraction_solid)
     temp_arr = np.asarray(temperature_celcius)
-
-    # Interpolate temperature_celciuss at fs1 and fs2
-    temp1 = np.interp(fs1, fs_arr, temp_arr)
-    temp2 = np.interp(fs2, fs_arr, temp_arr)
-
-    # Calculate KHCS
-    delta_root_fs = np.sqrt(fs2) - np.sqrt(fs1)
-    khcs = (temp1 - temp2) / delta_root_fs
-
-    return float(khcs)
+ 
+    # Filter to vulnerable range
+    mask = (fs_arr >= fs_min) & (fs_arr <= fs_max)
+    fs_filtered = fs_arr[mask]
+    temp_filtered = temp_arr[mask]
+ 
+    # Fallback to last two points if fewer than 2 points in range
+    if len(fs_filtered) < 2:
+        if len(fs_arr) < 2:
+            return np.nan
+        fs_filtered = fs_arr[-2:]
+        temp_filtered = temp_arr[-2:]
+ 
+    sqrt_fs = np.sqrt(fs_filtered)
+    steepness = np.abs(np.gradient(temp_filtered, sqrt_fs))
+ 
+    return float(np.max(steepness))
 
 
 def mode2_cooling(temperature_celcius: np.ndarray, fraction_solid: np.ndarray,
